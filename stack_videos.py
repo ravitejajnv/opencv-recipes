@@ -3,9 +3,11 @@ import os
 import glob
 import cv2
 import re
+import sys
 from tqdm import tqdm
 from pathlib import Path
 import argparse
+import subprocess
 
 
 def natural_sort(l): 
@@ -13,7 +15,34 @@ def natural_sort(l):
     alphanum_key = lambda key: [ convert(c) for c in re.split('([0-9]+)', key) ] 
     return sorted(l, key = alphanum_key)
 
-def StackVideos(path1, path2, use_flag, output_fname = None, extesnion = 'jpg', frame_rate = 25, width = None, height = None):
+def extract_audio(vid_path, extracted_audio_name = 'extracted_audio.aac' ):
+
+    #ffmpeg -i video.mp4 -ss 1:20 -to 1:40 out.aac
+    #ffmpeg -i video.mp4 -vn -acodec copy out.aac
+
+    #use -n instead of -y to deny overriding the file if it already exists.
+    #cmd = "ffmpeg -y -i "+str(self.vid_path)+"  -ss "+str(self.start_time)+"  -to  "+str(self.actual_end_time)+"  "+extracted_audio_name
+    cmd = "ffmpeg -y -i "+str(vid_path)+" -vn -acodec copy  "+extracted_audio_name
+    print(cmd)
+    process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE)
+    out = process.communicate()[0]
+
+    print("Audio extraction status {}".format(out))
+
+    return
+
+def add_audio(input_video_without_audio, source_audio, output_vid_name ):
+
+    #ffmpeg -i video.mp4 -i output-audio.aac -codec copy -shortest output_with_audio.mp4
+    cmd = "ffmpeg -y -i "+str(input_video_without_audio)+" -i "+str(source_audio)+" -codec copy -shortest "+str(output_vid_name)
+    print(cmd)
+    process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE)
+    out = process.communicate()[0]
+    print("Audio addition status {}".format(out))
+
+    return
+
+def StackVideos(path1, path2, use_flag, output_fname = None, extesnion = 'jpg', frame_rate = 25, width = None, height = None, add_audio = False):
     '''
     Function to stack and write frames for quick comparision
 
@@ -52,6 +81,7 @@ def StackVideos(path1, path2, use_flag, output_fname = None, extesnion = 'jpg', 
             img_out = cv2.hconcat([img1, img2])
             out.write(img_out)
 
+
     if use_flag == 'videos':
         cap1 = cv2.VideoCapture(str(path1))
         cap2 = cv2.VideoCapture(str(path2))
@@ -78,6 +108,16 @@ def StackVideos(path1, path2, use_flag, output_fname = None, extesnion = 'jpg', 
             out.write(img_out)
 
     out.release()
+
+    if add_audio:
+        final_vid_fname = str(output_fname).replace('.mp4', '_wAudio.mp4')
+        extract_audio(vid_path = str(path1))
+        add_audio(input_video_without_audio= output_fname, source_audio = 'extracted_audio.aac', output_vid_name = final_vid_fname )
+        os.remove('extracted_audio.aac')
+        os.remove(output_fname)
+        os.rename(final_vid_fname, str(output_fname)) 
+
+
     return
 
     
@@ -147,6 +187,22 @@ def main():
     )
 
     parser.add_argument(
+        "--add_audio",
+        dest="add_audio",
+        help="True if you want to add audio, and the source should be the first Video",
+        default=False,
+        type=bool,
+    )
+
+    # parser.add_argument(
+    #     "--resize_video",
+    #     dest="resize_video",
+    #     help="True if you want to resize one of the videos, 2nd video is resized to the size of first video",
+    #     default=False,
+    #     type=bool,
+    # )
+
+    parser.add_argument(
         "--output_fname",
         dest="output_video_file",
         default=None,
@@ -189,7 +245,11 @@ def main():
     height = args.height
 
     if (use_frames and use_videos) or ( (not use_frames) and (not use_videos) ):
-        print("Error, use_frames and use_videos both can't be True simultaneously")
+        print("Error, use_frames and use_videos both can't be True or False simultaneously")
+        sys.exit(0)
+
+    if  ( (add_audio) and (not use_videos) ):
+        print("Error, Can only add audio if both the input files are videos")
         sys.exit(0)
     
     # get the variables
@@ -211,7 +271,7 @@ def main():
         output_fname = None
         
     # call the driver program
-    StackVideos(path1, path2, use_flag, output_fname, extesnion, frame_rate, width, height)
+    StackVideos(path1, path2, use_flag, output_fname, extesnion, frame_rate, width, height, add_audio)
     return 
 
 # Driver Code 
